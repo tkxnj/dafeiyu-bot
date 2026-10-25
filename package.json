@@ -1,0 +1,22 @@
+{
+  "name": "blue-fatfish-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "蓝色大肥鱼：一个会接梗的 QQ 群 AI 群友（NapCat/OneBot 11 + DeepSeek）",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "demo": "node scripts/demo.js",
+    "doctor": "node scripts/doctor.js",
+    "check": "node scripts/check-account.mjs",
+    "selftest": "node scripts/selftest.mjs",
+    "setup:napcat": "node scripts/setup-napcat.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  }
+}

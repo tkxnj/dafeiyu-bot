@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>蓝色大肥鱼 · 控制台</title>
+<style>
+  :root {
+    --bg1: #071a2b;
+    --bg2: #0d3350;
+    --card: rgba(255, 255, 255, 0.07);
+    --line: rgba(140, 220, 255, 0.16);
+    --text: #eaf6ff;
+    --muted: #8faec4;
+    --cyan: #4cc9f0;
+    --green: #3ddc97;
+    --red: #ff6b81;
+    --yellow: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 15% -10%, #15496e 0%, transparent 60%),
+                radial-gradient(900px 600px at 110% 20%, #0f3550 0%, transparent 55%),
+                linear-gradient(160deg, var(--bg1), var(--bg2));
+    color: var(--text);
+    font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 34px 20px 40px;
+    display: flex;
+    justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 1080px; }
+
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .logo {
+    width: 54px; height: 54px; border-radius: 18px;
+    background: linear-gradient(145deg, #2196f3, #0a5c9c);
+    display: grid; place-items: center; font-size: 28px;
+    box-shadow: 0 8px 30px rgba(33, 150, 243, .35);
+  }
+  h1 { font-size: 26px; margin: 0; letter-spacing: .5px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 4px 0 26px 68px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px 18px;
+    backdrop-filter: blur(8px);
+  }
+  .card .label { color: var(--muted); font-size: 12px; letter-spacing: .6px; margin-bottom: 8px; }
+  .card .value { font-size: 19px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+  .card .extra { color: var(--muted); font-size: 12px; margin-top: 6px; min-height: 16px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 4px rgba(143, 174, 196, .12); }
+  .dot.on { background: var(--green); box-shadow: 0 0 0 4px rgba(61, 220, 151, .16), 0 0 12px rgba(61, 220, 151, .7); }
+  .dot.off { background: var(--red); box-shadow: 0 0 0 4px rgba(255, 107, 129, .14); }
+  .dot.wait { background: var(--yellow); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0 10px; }
+  button {
+    border: none; border-radius: 14px; padding: 15px 30px;
+    font-size: 16px; font-weight: 700; color: #04202f; cursor: pointer;
+    font-family: inherit; transition: transform .08s ease, filter .15s ease, opacity .15s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: translateY(1px) scale(.99); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #btnStart { background: linear-gradient(145deg, #52f0b0, #19c37d); box-shadow: 0 8px 26px rgba(61, 220, 151, .28); }
+  #btnStop { background: linear-gradient(145deg, #ff8b9c, #ff5a72); color: #2a0710; box-shadow: 0 8px 26px rgba(255, 107, 129, .25); }
+  #btnRestart { background: rgba(255, 255, 255, .12); color: var(--text); border: 1px solid var(--line); }
+  #btnClearLogs { background: rgba(255, 255, 255, .07); color: var(--muted); border: 1px solid var(--line); padding: 12px 22px; font-size: 14px; }
+  #btnClearLogs:hover { color: var(--text); }
+
+  #message { min-height: 22px; font-size: 13px; color: var(--yellow); margin: 6px 0 16px; white-space: pre-wrap; }
+
+  .logbox {
+    background: rgba(0, 8, 16, .55);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px 16px;
+    margin-top: 12px;
+  }
+  .logbox .head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; letter-spacing: .6px; margin-bottom: 8px; }
+  pre#log {
+    margin: 0; max-height: 300px; overflow: auto;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: #b7d8ea;
+  }
+  .chat-hint { color: var(--muted); font-size: 12px; margin: 6px 0 10px; line-height: 1.6; }
+  .subhead { color: var(--cyan); font-size: 12px; margin: 14px 0 6px; letter-spacing: .5px; }
+  .chatlist { display: flex; flex-direction: column; gap: 6px; }
+  .chatrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255, 255, 255, .04); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .chatname { color: var(--text); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chatname span { color: var(--muted); font-size: 11px; margin-left: 6px; }
+  .empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+  .modes { display: flex; gap: 6px; flex-shrink: 0; }
+  .mode { padding: 5px 10px; font-size: 12px; border-radius: 8px; background: rgba(255, 255, 255, .06); color: var(--muted); border: 1px solid var(--line); font-weight: 600; font-family: inherit; cursor: pointer; }
+  .mode.active { background: rgba(76, 201, 240, .2); color: #bfeeff; border-color: rgba(76, 201, 240, .5); }
+  .toggle { padding: 5px 12px; font-size: 12px; border-radius: 8px; background: rgba(255, 255, 255, .06); color: var(--muted); border: 1px solid var(--line); font-weight: 600; font-family: inherit; cursor: pointer; flex-shrink: 0; }
+  .toggle.on { background: rgba(61, 220, 151, .18); color: #b9ffe1; border-color: rgba(61, 220, 151, .5); }
+  .toggle.off { background: rgba(255, 107, 129, .14); color: #ffc2cc; border-color: rgba(255, 107, 129, .4); }
+  .addrow { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .addrow input { flex: 1; min-width: 160px; background: rgba(0, 8, 16, .5); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 9px 10px; font-size: 13px; font-family: inherit; }
+  .mini { padding: 9px 14px; font-size: 13px; border-radius: 8px; font-weight: 700; font-family: inherit; cursor: pointer; }
+  .mini.allow { background: rgba(61, 220, 151, .85); color: #052016; }
+  .mini.deny { background: rgba(255, 107, 129, .85); color: #2a0710; }
+  .chatrow.meme { flex-wrap: wrap; align-items: flex-start; }
+  .chatrow-tall { align-items: flex-start; }
+  .chat-main { flex: 1; min-width: 0; }
+  .chat-meta { color: var(--muted); font-size: 11px; margin-top: 3px; }
+  .limit-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 7px; }
+  .limit-row label { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; }
+  .limit-input { width: 62px; background: rgba(0, 8, 16, .5); border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 4px 6px; font-size: 12px; font-family: inherit; }
+  .limit-row .mini { padding: 5px 10px; font-size: 11px; }
+  .row-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+  .meme-info { flex: 1; min-width: 180px; }
+  .meme-term { color: var(--yellow); font-weight: 600; font-size: 13px; }
+  .meme-context { color: var(--muted); font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+  .meme-input { flex: 1; min-width: 160px; background: rgba(0, 8, 16, .5); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 8px 10px; font-size: 12px; font-family: inherit; }
+  .module { background: rgba(0, 8, 16, .55); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; margin-top: 14px; }
+  .module-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; letter-spacing: .6px; margin-bottom: 12px; }
+  .module-note { color: var(--muted); font-size: 11px; }
+  .tabs { display: flex; gap: 6px; background: rgba(0, 8, 16, .5); border: 1px solid var(--line); padding: 5px; border-radius: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { flex: 1; min-width: 110px; padding: 9px 12px; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; font-family: inherit; border: 1px solid transparent; cursor: pointer; }
+  .tab:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+  .tab.active { background: rgba(76, 201, 240, .16); color: #d9f6ff; border-color: rgba(76, 201, 240, .4); }
+  .badge { display: inline-block; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 107, 129, .25); color: #ffd7de; font-size: 11px; margin-left: 4px; }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; }
+  .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .panel-title { color: var(--text); font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .panel-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .submodule { background: rgba(255, 255, 255, .03); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+  .submodule-head { display: flex; justify-content: space-between; align-items: center; color: var(--cyan); font-size: 12px; letter-spacing: .5px; margin-bottom: 8px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  footer { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; margin-top: 18px; gap: 12px; flex-wrap: wrap; }
+  .linkbtn { background: none; border: none; color: var(--muted); font-size: 12px; padding: 4px; cursor: pointer; text-decoration: underline; font-family: inherit; }
+  .linkbtn:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🐟</div>
+    <div>
+      <h1>蓝色大肥鱼 · 控制台</h1>
+    </div>
+  </header>
+  <div class="sub">静默启动 / 停止我，不弹黑窗口。关掉本页面不会影响后台运行，随时再打开。</div>
+
+  <div class="module">
+    <div class="module-head">
+      <span>运行状态</span>
+      <span class="module-note">关掉页面不影响后台运行</span>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="label">NAPCAT（无界面 QQ）</div>
+        <div class="value"><span class="dot" id="dotN"></span><span id="txtN">检查中…</span></div>
+        <div class="extra" id="extN"></div>
+      </div>
+      <div class="card">
+        <div class="label">大肥鱼 BOT</div>
+        <div class="value"><span class="dot" id="dotB"></span><span id="txtB">检查中…</span></div>
+        <div class="extra" id="extB"></div>
+      </div>
+      <div class="card">
+        <div class="label">登录账号</div>
+        <div class="value" id="account">—</div>
+        <div class="extra">触发方式：看下方「会话设置」</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnStart">启动</button>
+      <button id="btnStop">停止</button>
+      <button id="btnRestart">重启</button>
+      <button id="btnClearLogs">清除日志</button>
+    </div>
+    <div id="message"></div>
+  </div>
+
+  <div class="module">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="chats">会话设置</button>
+      <button class="tab" data-tab="memes">梗词典 <span class="badge" id="memeBadge">0</span></button>
+      <button class="tab" data-tab="logs">运行日志</button>
+    </div>
+
+    <section class="tabpanel active" id="panel-chats">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">会话设置</div>
+          <div class="chat-hint">改完约 2 秒生效，不用重启 bot。群聊选「仅 @ 回复」或「直接回复」；私聊逐人开关。</div>
+        </div>
+        <div class="panel-actions">
+          <button class="linkbtn" id="btnRelogin">扫码重新登录</button>
+          <button class="linkbtn" id="btnRefreshChats">刷新列表</button>
+        </div>
+      </div>
+      <div id="qrBox" style="display:none; text-align:center; margin:10px 0;">
+        <img id="qrImg" alt="NapCat 登录二维码" style="width:190px;height:190px;background:#fff;border-radius:12px;padding:8px;" />
+        <div class="chat-hint">手机 QQ 扫码登录；扫完等 NapCat 上线后点「刷新列表」。</div>
+      </div>
+      <div class="cols">
+        <div class="submodule">
+          <div class="submodule-head"><span id="groupHead">群聊</span></div>
+          <div class="chat-hint">「直接回复」= 不 @ 也回，更费 token。</div>
+          <div id="groupList" class="chatlist"><div class="empty">加载中…</div></div>
+        </div>
+        <div class="submodule">
+          <div class="submodule-head"><span id="privateHead">私聊 / 好友</span></div>
+          <div class="chat-hint">单独开关每个人是否回复。</div>
+          <div id="privateList" class="chatlist"><div class="empty">加载中…</div></div>
+          <div class="addrow">
+            <input id="privateQq" placeholder="手动添加 QQ 号（允许 / 禁止私聊）" />
+            <button id="btnPrivateAllow" class="mini allow">允许</button>
+            <button id="btnPrivateDeny" class="mini deny">禁止</button>
+          </div>
+        </div>
+      </div>
+      <div id="chatMsg" class="chat-hint"></div>
+    </section>
+
+    <section class="tabpanel" id="panel-memes">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">梗词典</div>
+          <div class="chat-hint">bot 遇到真看不懂的梗会自动记到「待解释」；写一句解释保存后，之后每次聊天都会带上它。</div>
+        </div>
+        <div class="panel-actions"><button class="linkbtn" id="btnRefreshMemes">刷新</button></div>
+      </div>
+      <div class="cols">
+        <div class="submodule">
+          <div class="submodule-head"><span id="memePendingHead">待解释</span></div>
+          <div id="memePendingList" class="chatlist"><div class="empty">加载中…</div></div>
+        </div>
+        <div class="submodule">
+          <div class="submodule-head"><span id="memeGlossaryHead">已学会</span></div>
+          <div id="memeGlossaryList" class="chatlist"><div class="empty">还没有</div></div>
+        </div>
+      </div>
+      <div id="memeMsg" class="chat-hint"></div>
+    </section>
+
+    <section class="tabpanel" id="panel-logs">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">运行日志</div>
+          <div class="chat-hint">data/bot.log，最近 200 行，随运行自动刷新。</div>
+        </div>
+        <div class="panel-actions"><span id="updated">—</span></div>
+      </div>
+      <pre id="log">加载中…</pre>
+    </section>
+  </div>
+
+  <footer>
+    <span>关闭页面不影响运行；控制台服务常驻后台。</span>
+    <button class="linkbtn" id="btnQuit">退出控制台服务</button>
+  </footer>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const buttons = ['btnStart', 'btnStop', 'btnRestart', 'btnClearLogs'].map($);
+  let busy = false;
+  let toastUntil = 0;
+
+  function setButtonsDisabled(disabled) {
+    for (const button of buttons) button.disabled = disabled || busy;
+  }
+
+  function setDot(id, state) {
+    const dot = $(id);
+    dot.className = 'dot' + (state === 'on' ? ' on' : state === 'off' ? ' off' : state === 'wait' ? ' wait' : '');
+  }
+
+  function render(status) {
+    const napcat = status.napcat || {};
+    const bot = status.bot || {};
+    const op = status.operation;
+
+    if (op === 'start') {
+      setDot('dotN', napcat.wsUp ? 'on' : 'wait');
+      $('txtN').textContent = napcat.wsUp ? '运行中' : '启动中…';
+    } else if (napcat.running || napcat.wsUp) {
+      setDot('dotN', 'on');
+      $('txtN').textContent = '运行中';
+    } else {
+      setDot('dotN', 'off');
+      $('txtN').textContent = '已停止';
+    }
+    $('extN').textContent = napcat.wsUp ? 'OneBot WebSocket 3001 在线' : (napcat.running ? '进程在，WS 未就绪（可能需要扫码）' : '点「启动」拉起');
+
+    if (op === 'start') {
+      setDot('dotB', bot.running ? 'on' : 'wait');
+      $('txtB').textContent = bot.running ? '已启动' : '启动中…';
+    } else if (bot.running) {
+      setDot('dotB', 'on');
+      $('txtB').textContent = '运行中';
+    } else {
+      setDot('dotB', 'off');
+      $('txtB').textContent = '已停止';
+    }
+    $('extB').textContent = bot.running ? `PID ${bot.pid}` : '等待启动';
+
+    $('account').textContent = status.account || '—';
+    if (status.operationMessage) $('message').textContent = status.operationMessage;
+    else if (!busy && Date.now() > toastUntil) $('message').textContent = '';
+
+    if (status.logTail) $('log').textContent = status.logTail;
+    $('updated').textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    $('log').scrollTop = $('log').scrollHeight;
+
+    busy = Boolean(op);
+    setButtonsDisabled(busy);
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch('/api/status', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      render(await res.json());
+    } catch (err) {
+      $('message').textContent = `控制台连接失败：${err.message}`;
+    }
+  }
+
+  async function act(path, label) {
+    busy = true;
+    setButtonsDisabled(true);
+    $('message').textContent = label + '…';
+    try {
+      const res = await fetch(path, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      $('message').textContent = data.message || (label + '完成');
+      toastUntil = Date.now() + 5000;
+    } catch (err) {
+      $('message').textContent = `${label}失败：${err.message}`;
+      toastUntil = Date.now() + 8000;
+    } finally {
+      busy = false;
+      setButtonsDisabled(false);
+      poll();
+      loadChats();
+    }
+  }
+
+  // ---------- 会话设置（群回复模式 / 私聊开关） ----------
+  function escapeHtml(text) {
+    return String(text ?? '').replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[ch]));
+  }
+
+  async function loadChats() {
+    try {
+      const res = await fetch('/api/chats', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      renderChats(data);
+    } catch (err) {
+      $('groupList').innerHTML = `<div class="empty">读取失败：${escapeHtml(err.message)}</div>`;
+      $('privateList').innerHTML = '<div class="empty">NapCat 在运行吗？</div>';
+    }
+  }
+
+  function renderChats(data) {
+    const groups = data.groups || [];
+    const privates = data.privateChats || [];
+    const cacheNote = data.cachedAt ? `（缓存于 ${new Date(data.cachedAt).toLocaleString('zh-CN', { hour12: false })}）` : '';
+    $('groupHead').textContent = `群聊（${groups.length}）${cacheNote}`;
+    $('privateHead').textContent = `私聊 / 好友（${privates.length}）${cacheNote}`;
+    if (data.error) $('chatMsg').textContent = data.error;
+    $('groupList').innerHTML = groups.length === 0
+      ? '<div class="empty">没有群（或 NapCat 未连接）</div>'
+      : groups.map((g) => `
+        <div class="chatrow chatrow-tall">
+          <div class="chat-main">
+            <div class="chatname">${escapeHtml(g.name)}<span>${escapeHtml(g.id)}</span></div>
+            <div class="chat-meta" data-stats-for="${escapeHtml(g.id)}" data-stats-kind="group">统计加载中…</div>
+            <div class="limit-row">
+              <label>每分钟 <input class="limit-input" type="number" min="1" max="10000" step="1" value="${Number(g.perMinute) || 10}" data-limit-kind="group" data-limit-id="${escapeHtml(g.id)}" data-limit-field="perMinute" /></label>
+              <label>每小时 <input class="limit-input" type="number" min="1" max="100000" step="1" value="${Number(g.perHour) || 300}" data-limit-kind="group" data-limit-id="${escapeHtml(g.id)}" data-limit-field="perHour" /></label>
+              <button class="mini allow" data-limit-save="group" data-limit-id="${escapeHtml(g.id)}">保存限额</button>
+            </div>
+          </div>
+          <div class="modes">
+            <button class="mode ${g.mode === 'mention' ? 'active' : ''}" data-group="${escapeHtml(g.id)}" data-mode="mention">仅 @ 回复</button>
+            <button class="mode ${g.mode === 'auto' ? 'active' : ''}" data-group="${escapeHtml(g.id)}" data-mode="auto">直接回复</button>
+            <button class="mode ${g.hideOwner ? 'active' : ''}" data-hide-owner-group="${escapeHtml(g.id)}" data-hide-owner="${g.hideOwner ? '1' : '0'}">${g.hideOwner ? '装不认识' : '承认关系'}</button>
+          </div>
+        </div>`).join('');
+    $('privateList').innerHTML = privates.length === 0
+      ? '<div class="empty">还没有私聊过的人（有人私聊 bot 后会出现在这里）</div>'
+      : privates.map((p) => `
+        <div class="chatrow chatrow-tall">
+          <div class="chat-main">
+            <div class="chatname">${escapeHtml(p.name)}<span>${escapeHtml(p.id)}</span></div>
+            <div class="chat-meta" data-stats-for="${escapeHtml(p.id)}" data-stats-kind="private">统计加载中…</div>
+            <div class="limit-row">
+              <label>每分钟 <input class="limit-input" type="number" min="1" max="10000" step="1" value="${Number(p.perMinute) || 5}" data-limit-kind="private" data-limit-id="${escapeHtml(p.id)}" data-limit-field="perMinute" /></label>
+              <label>每小时 <input class="limit-input" type="number" min="1" max="100000" step="1" value="${Number(p.perHour) || 300}" data-limit-kind="private" data-limit-id="${escapeHtml(p.id)}" data-limit-field="perHour" /></label>
+              <button class="mini allow" data-limit-save="private" data-limit-id="${escapeHtml(p.id)}">保存限额</button>
+            </div>
+          </div>
+          <div class="row-actions">
+            <button class="toggle ${p.hideOwner ? 'off' : 'on'}" data-hide-owner-private="${escapeHtml(p.id)}" data-hide-owner="${p.hideOwner ? '1' : '0'}">${p.hideOwner ? '装不认识' : '承认关系'}</button>
+            <button class="toggle ${p.enabled ? 'on' : 'off'}" data-private="${escapeHtml(p.id)}" data-enabled="${p.enabled ? '1' : '0'}">${p.enabled ? '回复' : '不回复'}</button>
+          </div>
+        </div>`).join('');
+    for (const btn of $('groupList').querySelectorAll('.mode[data-group]')) {
+      btn.onclick = () => setGroupMode(btn.dataset.group, btn.dataset.mode);
+    }
+    for (const btn of $('groupList').querySelectorAll('[data-hide-owner-group]')) {
+      btn.onclick = () => setHideOwner('group', btn.dataset.hideOwnerGroup, btn.dataset.hideOwner !== '1');
+    }
+    for (const btn of $('privateList').querySelectorAll('[data-hide-owner-private]')) {
+      btn.onclick = () => setHideOwner('private', btn.dataset.hideOwnerPrivate, btn.dataset.hideOwner !== '1');
+    }
+    for (const btn of $('privateList').querySelectorAll('[data-private]')) {
+      btn.onclick = () => setPrivateEnabled(btn.dataset.private, btn.dataset.enabled !== '1');
+    }
+    for (const btn of document.querySelectorAll('[data-limit-save]')) {
+      btn.onclick = () => saveLimits(btn.dataset.limitSave, btn.dataset.limitId);
+    }
+    loadStats();
+  }
+
+  function saveLimits(kind, id) {
+    const root = kind === 'group' ? $('groupList') : $('privateList');
+    const minInput = root.querySelector(`[data-limit-kind="${kind}"][data-limit-id="${id}"][data-limit-field="perMinute"]`);
+    const hourInput = root.querySelector(`[data-limit-kind="${kind}"][data-limit-id="${id}"][data-limit-field="perHour"]`);
+    const perMinute = Number(minInput?.value);
+    const perHour = Number(hourInput?.value);
+    if (!Number.isInteger(perMinute) || perMinute <= 0 || !Number.isInteger(perHour) || perHour <= 0) {
+      $('chatMsg').textContent = '限额必须是大于 0 的整数';
+      return;
+    }
+    const type = kind === 'group' ? 'group-limits' : 'private-limits';
+    saveChatSetting(
+      { type, id: String(id), perMinute, perHour },
+      `${kind === 'group' ? '群' : '私聊'} ${id} 限额已保存：${perMinute}/分、${perHour}/时`,
+    );
+  }
+
+  async function loadStats() {
+    try {
+      const res = await fetch('/api/stats', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      renderStats(data);
+    } catch {
+      // 统计失败不打扰操作
+    }
+  }
+
+  function renderStats(data) {
+    const now = Date.now();
+    for (const el of document.querySelectorAll('[data-stats-for]')) {
+      const kind = el.dataset.statsKind;
+      const id = el.dataset.statsFor;
+      const key = kind === 'private' ? `private:${id}` : id;
+      const inbound = Array.isArray(data.inbound?.[key]) ? data.inbound[key] : [];
+      const replies = Array.isArray(data.replies?.[key]) ? data.replies[key] : [];
+      const countSince = (arr, windowMs) => arr.filter((time) => typeof time === 'number' && now - time <= windowMs).length;
+      el.textContent = `近1分钟 消息 ${countSince(inbound, 60000)} / 回复 ${countSince(replies, 60000)} ｜ 近1小时 消息 ${countSince(inbound, 3600000)} / 回复 ${countSince(replies, 3600000)}`;
+    }
+  }
+
+  async function saveChatSetting(body, okText) {
+    try {
+      const res = await fetch('/api/chat-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      $('chatMsg').textContent = okText;
+      loadChats();
+    } catch (err) {
+      $('chatMsg').textContent = `保存失败：${err.message}`;
+    }
+  }
+
+  function setGroupMode(id, mode) {
+    saveChatSetting({ type: 'group', id, mode }, `群 ${id} 已设为${mode === 'auto' ? '直接回复' : '仅 @ 回复'}`);
+  }
+
+  function setPrivateEnabled(id, enabled) {
+    saveChatSetting({ type: 'private', id, enabled }, `私聊 ${id} 已设为${enabled ? '回复' : '不回复'}`);
+  }
+
+  function setHideOwner(kind, id, hideOwner) {
+    const type = kind === 'group' ? 'group-hide-owner' : 'private-hide-owner';
+    const label = kind === 'group' ? '群' : '私聊';
+    saveChatSetting(
+      { type, id: String(id), hideOwner },
+      `${label} ${id} 已设为${hideOwner ? '装不认识主人' : '承认关系'}`,
+    );
+  }
+
+  $('btnRefreshChats').onclick = () => { $('chatMsg').textContent = '刷新中…'; loadChats(); };
+  $('btnRelogin').onclick = async () => {
+    if (!confirm('会重启 NapCat 并生成新的登录二维码，继续？')) return;
+    $('chatMsg').textContent = '正在重启 NapCat、生成二维码…';
+    try {
+      const res = await fetch('/api/relogin', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      $('qrImg').src = data.qrUrl;
+      $('qrBox').style.display = 'block';
+      $('chatMsg').textContent = '请用手机 QQ 扫码登录；登录成功后点「刷新列表」或等自动刷新。';
+      poll();
+    } catch (err) {
+      $('chatMsg').textContent = `生成二维码失败：${err.message}`;
+    }
+  };
+  $('btnPrivateAllow').onclick = () => {
+    const id = $('privateQq').value.trim();
+    if (!id) return;
+    saveChatSetting({ type: 'private', id, enabled: true }, `私聊 ${id} 已允许`);
+    $('privateQq').value = '';
+  };
+  $('btnPrivateDeny').onclick = () => {
+    const id = $('privateQq').value.trim();
+    if (!id) return;
+    saveChatSetting({ type: 'private', id, enabled: false }, `私聊 ${id} 已禁止`);
+    $('privateQq').value = '';
+  };
+
+  // ---------- 梗词典（看不懂的梗 / 已学会的梗） ----------
+  async function loadMemes() {
+    try {
+      const res = await fetch('/api/memes', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      renderMemes(data);
+    } catch (err) {
+      $('memeMsg').textContent = `读取梗词典失败：${err.message}`;
+    }
+  }
+
+  function renderMemes(data) {
+    const pending = data.pending || [];
+    const glossary = data.glossary || [];
+    $('memeBadge').textContent = String(pending.length);
+    $('memePendingHead').textContent = `待解释（${pending.length}）`;
+    $('memeGlossaryHead').textContent = `已学会（${glossary.length}）`;
+    $('memePendingList').innerHTML = pending.length === 0
+      ? '<div class="empty">暂时没有看不懂的梗</div>'
+      : pending.map((item) => `
+        <div class="chatrow meme">
+          <div class="meme-info">
+            <div class="meme-term">${escapeHtml(item.term)}</div>
+            <div class="meme-context">${escapeHtml(item.context || item.userName || '')}</div>
+          </div>
+          <input class="meme-input" data-meme-input="${escapeHtml(item.id)}" placeholder="用一句话解释这个梗…" />
+          <button class="mini allow" data-meme-save="${escapeHtml(item.id)}">保存</button>
+          <button class="mini deny" data-meme-ignore="${escapeHtml(item.id)}">忽略</button>
+        </div>`).join('');
+    $('memeGlossaryList').innerHTML = glossary.length === 0
+      ? '<div class="empty">还没有学会的梗</div>'
+      : glossary.map((item) => `
+        <div class="chatrow">
+          <div class="meme-info">
+            <div class="meme-term">${escapeHtml(item.term)}</div>
+            <div class="meme-context">${escapeHtml(item.explanation)}</div>
+          </div>
+          <button class="mini deny" data-meme-forget="${escapeHtml(item.term)}">删除</button>
+        </div>`).join('');
+    for (const btn of $('memePendingList').querySelectorAll('[data-meme-save]')) {
+      btn.onclick = () => {
+        const input = $('memePendingList').querySelector(`[data-meme-input="${btn.dataset.memeSave}"]`);
+        const explanation = input ? input.value.trim() : '';
+        if (!explanation) {
+          $('memeMsg').textContent = '先写一句解释再保存';
+          return;
+        }
+        memeAction({ action: 'explain', id: btn.dataset.memeSave, explanation }, '已保存，AI 下次就懂了');
+      };
+    }
+    for (const btn of $('memePendingList').querySelectorAll('[data-meme-ignore]')) {
+      btn.onclick = () => memeAction({ action: 'ignore', id: btn.dataset.memeIgnore }, '已忽略');
+    }
+    for (const btn of $('memeGlossaryList').querySelectorAll('[data-meme-forget]')) {
+      btn.onclick = () => {
+        if (!confirm(`删除已学会的「${btn.dataset.memeForget}」？`)) return;
+        memeAction({ action: 'forget', term: btn.dataset.memeForget }, '已删除');
+      };
+    }
+  }
+
+  async function memeAction(body, okText) {
+    try {
+      const res = await fetch('/api/memes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      $('memeMsg').textContent = okText;
+      loadMemes();
+    } catch (err) {
+      $('memeMsg').textContent = `保存失败：${err.message}`;
+    }
+  }
+
+  $('btnRefreshMemes').onclick = () => { $('memeMsg').textContent = '刷新中…'; loadMemes(); };
+
+  $('btnStart').onclick = () => act('/api/start', '启动');
+  $('btnStop').onclick = () => act('/api/stop', '停止');
+  $('btnRestart').onclick = () => act('/api/restart', '重启');
+  $('btnClearLogs').onclick = () => {
+    if (!confirm('清除所有运行日志？（只清日志文件，不影响 bot 运行和聊天记忆）')) return;
+    act('/api/clear-logs', '清除日志');
+  };
+  $('btnQuit').onclick = async () => {
+    if (!confirm('退出控制台服务？（不会停止 bot/NapCat）')) return;
+    try {
+      await fetch('/api/shutdown', { method: 'POST' });
+      document.body.innerHTML = '<div style="margin:auto;color:#8faec4;font-size:15px">控制台服务已退出，可以关闭本页面。想再用请双击桌面「大肥鱼控制台」。</div>';
+    } catch {
+      // 忽略
+    }
+  };
+
+  // ---------- 模块标签页 ----------
+  const TAB_KEY = 'fatfish-panel-tab';
+  function showTab(name, remember = true) {
+    for (const tab of document.querySelectorAll('.tab')) {
+      tab.classList.toggle('active', tab.dataset.tab === name);
+    }
+    for (const panel of document.querySelectorAll('.tabpanel')) {
+      panel.classList.toggle('active', panel.id === `panel-${name}`);
+    }
+    if (remember) {
+      try { localStorage.setItem(TAB_KEY, name); } catch { /* 忽略 */ }
+    }
+    if (name === 'logs') $('log').scrollTop = $('log').scrollHeight;
+  }
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.onclick = () => showTab(tab.dataset.tab);
+  }
+  try {
+    const savedTab = localStorage.getItem(TAB_KEY);
+    if (savedTab && document.getElementById(`panel-${savedTab}`)) showTab(savedTab, false);
+  } catch { /* 忽略 */ }
+
+  poll();
+  setInterval(poll, 1500);
+  loadChats();
+  setInterval(loadChats, 15000);
+  loadMemes();
+  setInterval(loadMemes, 15000);
+  loadStats();
+  setInterval(loadStats, 5000);
+</script>
+</body>
+</html>

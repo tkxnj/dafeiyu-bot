@@ -1,0 +1,27 @@
+# 依赖
+node_modules/
+
+# 密钥
+.env
+.env.local
+
+# 运行期数据（聊天记忆、日志、登录缓存，属于隐私）
+data/*
+!data/.gitkeep
+*.log
+logs/
+
+# NapCat 运行时（全量包单独通过 Releases 分发；源码仓库不包含）
+napcat/
+
+# 控制台按本机生成的隐藏启动器（安装脚本会重新生成）
+control/打开控制台.vbs
+
+# 第三方社区语料（授权不明，不随公开仓库分发）
+docs/reference/
+
+# 临时文件 / 打包产物
+_tmp/
+*.zip
+.DS_Store
+Thumbs.db

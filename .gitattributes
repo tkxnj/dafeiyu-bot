@@ -1,0 +1,9 @@
+* text=auto
+
+# Windows 脚本按 CRLF 检出，避免批处理换行问题
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# VBS 可能含 UTF-16LE 编码，按二进制保留，禁止 Git 转码
+*.vbs -text
