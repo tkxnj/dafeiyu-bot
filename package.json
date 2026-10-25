@@ -13,7 +13,8 @@
     "doctor": "node scripts/doctor.js",
     "check": "node scripts/check-account.mjs",
     "selftest": "node scripts/selftest.mjs",
-    "setup:napcat": "node scripts/setup-napcat.mjs"
+    "setup:napcat": "node scripts/setup-napcat.mjs",
+    "setup": "node scripts/first-run-setup.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

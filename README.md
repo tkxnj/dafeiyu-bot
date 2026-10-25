@@ -51,9 +51,20 @@ npm ci
 - **一个 QQ 小号**（不要用大号；有封号风险）
 - **DeepSeek API Key**：<https://platform.deepseek.com/api_keys>
 
-### 2. 配置 `.env`
+### 2. 首次配置（推荐，双击向导）
 
-把 `.env.example` 复制为 `.env`，至少填写：
+双击根目录的 **`首次配置.bat`**，按提示输入：
+
+- DeepSeek API Key（`sk-` 开头，必填）
+- 机器人 QQ 号
+- 主人/男朋友的昵称或 QQ（可留空）
+- OneBot Token（直接回车会自动生成）
+
+脚本会自动生成/更新 `.env`，不需要手工改文件。
+
+> API Key 是你自己的付费凭据，**不会**放在公开仓库里，需要自己填一次。
+
+也可以手动把 `.env.example` 复制为 `.env` 后填写：
 
 ```env
 LLM_API_KEY=sk-你的DeepSeekKey
@@ -62,11 +73,11 @@ OWNER_NAMES=你的昵称,你的QQ号
 ONEBOT_ACCESS_TOKEN=换成一个随机字符串
 ```
 
-> `ONEBOT_ACCESS_TOKEN` 要和 NapCat 里 WebSocket 服务器的 Token 一致；不想设 Token 就两边都留空。
+> `ONEBOT_ACCESS_TOKEN` 要和 NapCat 里 WebSocket 服务器的 Token 一致；全量包会由 `scripts/setup-napcat.mjs` 自动按 `.env` 生成 NapCat 配置，一般不用手动对。
 
 ### 3. 启动
 
-**方式 A（全量包）**：直接双击根目录的 `启动.bat`。
+**方式 A（全量包）**：双击根目录的 `启动.bat`（首次配置向导最后也会问你要不要直接启动）。
 
 **方式 B（源码）**：先启动 NapCat（或已有的 OneBot 11 WS），再：
 
@@ -74,7 +85,7 @@ ONEBOT_ACCESS_TOKEN=换成一个随机字符串
 npm start
 ```
 
-第一次启动会自动从 `.env.example` 创建 `.env` 并打开记事本，填完保存后再运行一次。
+如果还没有 `.env`，`启动.bat` 会自动从 `.env.example` 创建并打开记事本，填完保存后再运行一次。
 
 ### 4. 首次登录 NapCat（只需一次）
 
