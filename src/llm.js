@@ -1,6 +1,7 @@
-// 大模型这一层：读人设、拼 prompt、调用 OpenAI 兼容接口。
+// 大模型这一层：读人设、拼 prompt、多模态解析、RAG记忆注入与 Tool Calling 循环。
 // 想换模型只改 .env（LLM_BASE_URL / LLM_MODEL），这里不用动。
 import fs from 'node:fs';
+import { warn, log } from './util.js';
 
 export function loadPersona(filePath) {
   try {
@@ -30,6 +31,7 @@ function buildSystemPrompt({
   nemesisNames = [],
   glossaryText = '',
   strangerGroup = false,
+  ragContext = '',
 }) {
   const now = new Date().toLocaleString('zh-CN', { hour12: false });
   const where = isPrivate
@@ -90,8 +92,9 @@ function buildSystemPrompt({
     persona,
     '',
     '---',
-    '【长期记忆】',
+    '【长期记忆与关系】',
     ...memoryLines,
+    ...(ragContext ? ['', ragContext] : []),
     ...(glossaryText
       ? ['', '【已学会的梗】', '聊天里遇到下面这些词，按学过的意思理解，不要标成看不懂：', glossaryText]
       : []),
@@ -108,6 +111,7 @@ function buildSystemPrompt({
     `- 只输出你要发出去的内容本身，不要加「${nickname}：」之类的前缀，不要解释你在做什么。`,
     '- 用 1~3 句短句，像真人在聊天；不要用 Markdown（不要加粗、标题、列表、代码块）。',
     '- 任何回复里都不要出现星号或下划线包住文字（QQ 不渲染，会显示成符号）；内心 OS 只能写成（OS：……）。',
+    '- 表情包与动作：情绪生动时，可在句中适度带一个表情标签，例如 [表情: 傲娇]、[表情: 翻白眼]、[表情: 吐泡泡]、[表情: 翻肚皮]、[表情: 摸鱼]、[表情: 坏笑]、[表情: 问号] 或 [表情: 白饭]；每条回复最多带 1 个表情，不要每句都带。',
     '- 接梗只限三组固定配对：token来→token回、白饭来→白饭回、寿来→寿回；其他任何带「来」的话正常回，绝对不要自创「XX来→XX回」。',
     '- 如果对方消息里有你完全看不懂的网络梗、缩写或黑话（不是普通生词，也不是一次没兴趣的玩笑），在回复最后单独一行输出：【看不懂的梗】那个词（只写词本身，不要解释）。真看懂或只是不想接就不要标，不要乱标。',
     '- 不写小作文，不用客服腔，不要每次都以反问结尾。',
@@ -115,6 +119,62 @@ function buildSystemPrompt({
       ? '- 这是私聊，不用 @ 对方，直接说话。'
       : '- 这是群聊；如果最后一条是 @ 你的消息，正面回 ta。',
   ].join('\n');
+}
+
+async function parseSSEStream(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullContent = '';
+  const toolCallsMap = new Map();
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // 保留未闭合的最后半行
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data:')) continue;
+      const dataStr = trimmed.slice(5).trim();
+      if (dataStr === '[DONE]') break;
+      let chunk;
+      try {
+        chunk = JSON.parse(dataStr);
+      } catch {
+        continue;
+      }
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta;
+      if (delta?.content) {
+        fullContent += delta.content;
+      }
+      if (delta?.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          if (!toolCallsMap.has(idx)) {
+            toolCallsMap.set(idx, {
+              id: tc.id || '',
+              type: 'function',
+              function: { name: tc.function?.name || '', arguments: '' },
+            });
+          }
+          const item = toolCallsMap.get(idx);
+          if (tc.id) item.id = tc.id;
+          if (tc.function?.name) item.function.name = tc.function.name;
+          if (tc.function?.arguments) item.function.arguments += tc.function.arguments;
+        }
+      }
+    }
+  }
+
+  const tool_calls = Array.from(toolCallsMap.values());
+  return {
+    content: fullContent,
+    tool_calls: tool_calls.length > 0 ? tool_calls : null,
+  };
 }
 
 export async function generateReply({
@@ -127,6 +187,10 @@ export async function generateReply({
   peerUserId = '',
   glossaryText = '',
   strangerGroup = false,
+  ragContext = '',
+  currentImages = [],
+  tools = [],
+  toolExecutor = null,
 }) {
   const { baseUrl, apiKey, model, temperature, maxTokens, timeoutMs } = config.llm;
 
@@ -144,6 +208,7 @@ export async function generateReply({
         nemesisNames: config.bot.nemesisNames,
         glossaryText,
         strangerGroup,
+        ragContext,
       }),
     },
   ];
@@ -166,58 +231,146 @@ export async function generateReply({
   }
 
   const prefix = isPrivate ? '【私聊】' : '【群聊】';
-  for (const item of selectedHistory) {
+  const historyLen = selectedHistory.length;
+
+  for (let idx = 0; idx < historyLen; idx += 1) {
+    const item = selectedHistory[idx];
     if (!item || typeof item.text !== 'string' || !item.text) continue;
-    messages.push({
-      role: item.bot ? 'assistant' : 'user',
-      content: item.bot ? item.text : `${prefix}${item.name}：${item.text}`,
-    });
+
+    const isLastItem = idx === historyLen - 1;
+    if (isLastItem && !item.bot && currentImages && currentImages.length > 0) {
+      // 当前轮次带有多模态图片
+      const contentParts = [
+        { type: 'text', text: `${prefix}${item.name}：${item.text}` },
+      ];
+      for (const imgUrl of currentImages) {
+        if (imgUrl) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: { url: imgUrl },
+          });
+        }
+      }
+      messages.push({
+        role: 'user',
+        content: contentParts,
+      });
+    } else {
+      messages.push({
+        role: item.bot ? 'assistant' : 'user',
+        content: item.bot ? item.text : `${prefix}${item.name}：${item.text}`,
+      });
+    }
   }
 
   const url = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
 
-  let response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    throw new Error(`连不上大模型接口（${url}）：${err.message}`);
+  // 工具调用循环（最多递归 2 轮）
+  let loopCount = 0;
+  const maxLoops = tools && tools.length > 0 ? 3 : 1;
+
+  while (loopCount < maxLoops) {
+    loopCount += 1;
+
+    const enableStream = config.behavior?.stream ?? true;
+    const reqBody = {
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: enableStream,
+    };
+
+    // 只有第一轮或工具执行后的一轮允许传入 tools
+    if (tools && tools.length > 0 && loopCount < maxLoops) {
+      reqBody.tools = tools;
+    }
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(reqBody),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      throw new Error(`连不上大模型接口（${url}）：${err.message}`);
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      let hint = '';
+      if (response.status === 401) hint = '（API Key 不对或没有权限）';
+      else if (response.status === 402) hint = '（账户余额不足）';
+      else if (response.status === 429) hint = '（触发限流，调低频率或稍后再试）';
+      else if (response.status >= 500) hint = '（模型服务端出问题了，稍后重试）';
+      throw new Error(`大模型接口 HTTP ${response.status}${hint}：${body.slice(0, 300)}`);
+    }
+
+    let assistantMsg;
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/event-stream')) {
+      const streamRes = await parseSSEStream(response);
+      assistantMsg = {
+        role: 'assistant',
+        content: streamRes.content,
+        tool_calls: streamRes.tool_calls,
+      };
+    } else {
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error('大模型返回的不是合法 JSON');
+      }
+      assistantMsg = data?.choices?.[0]?.message;
+    }
+
+    if (!assistantMsg) {
+      throw new Error('大模型返回了空响应');
+    }
+
+    // 检查是否触发了工具调用 (Function Calling)
+    if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0 && toolExecutor) {
+      messages.push(assistantMsg);
+
+      for (const call of assistantMsg.tool_calls) {
+        const fnName = call?.function?.name;
+        let fnArgs = {};
+        try {
+          fnArgs = JSON.parse(call?.function?.arguments || '{}');
+        } catch {
+          fnArgs = {};
+        }
+
+        log(`[工具调用] 模型触发 ${fnName}，参数: ${JSON.stringify(fnArgs)}`);
+        const toolResult = await toolExecutor.execute(fnName, fnArgs, {
+          chatKey: groupId,
+          userId: peerUserId,
+          userName: peerName,
+        });
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(toolResult),
+        });
+      }
+      // 继续下一轮循环，让模型根据工具结果生成最终回答
+      continue;
+    }
+
+    const content = assistantMsg.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      throw new Error('大模型返回了空内容');
+    }
+
+    return content;
   }
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    let hint = '';
-    if (response.status === 401) hint = '（API Key 不对或没有权限）';
-    else if (response.status === 402) hint = '（账户余额不足）';
-    else if (response.status === 429) hint = '（触发限流，调低频率或稍后再试）';
-    else if (response.status >= 500) hint = '（模型服务端出问题了，稍后重试）';
-    throw new Error(`大模型接口 HTTP ${response.status}${hint}：${body.slice(0, 300)}`);
-  }
-
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error('大模型返回的不是合法 JSON');
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('大模型返回了空内容');
-  }
-
-  return content;
+  throw new Error('大模型多轮工具调用超出循环上限');
 }

@@ -4,13 +4,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config, validateConfig } from './config.js';
-import { log, warn, error, sleep, rand, toText, sanitizeReply, splitBubbles, truncate } from './util.js';
+import { log, warn, error, sleep, rand, toText, extractMessageParts, resolveImageToBase64, sanitizeReply, splitBubbles, truncate } from './util.js';
 import { OneBotClient } from './onebot.js';
 import { GroupMemory } from './memory.js';
 import { TriggerEngine } from './trigger.js';
 import { loadPersona, generateReply } from './llm.js';
 import { ChatSettings } from './settings.js';
 import { Glossary } from './glossary.js';
+import { MemoryRetriever } from './rag.js';
+import { TOOL_DEFINITIONS, shouldEnableTools } from './tools/definitions.js';
+import { ToolExecutor } from './tools/executor.js';
+import { MemeManager } from './meme.js';
 
 const MAX_CONCURRENT_REPLIES = 4; // 同时最多生成几条回复，防止一次涌进来一堆消息时打爆接口
 // 装不认识的会话里，过滤历史中提过主人/男朋友的消息（主人昵称从 .env 读取，不写死）
@@ -92,6 +96,11 @@ const glossary = new Glossary({
   unknownFile: path.join(config.dataDir, 'unknown-memes.json'),
 });
 
+// AI 能力升级：RAG 长期记忆检索、工具调用 (Function Calling) 与富表情互动
+const memoryRetriever = new MemoryRetriever(config.dbFile);
+const toolExecutor = new ToolExecutor({ memoryRetriever });
+const memeManager = new MemeManager({ memesDir: config.memesDir });
+
 // 会话统计：记录每个会话收到/发出的时间戳，控制台用来算「近 1 分钟 / 近 1 小时」条数
 const STATS_FILE = path.join(config.dataDir, 'reply-stats.json');
 const chatStats = { inbound: {}, replies: {} };
@@ -156,6 +165,7 @@ function printBanner() {
   log('  触发：群聊默认只回 @；私聊默认直接回（具体看控制台「会话设置」）');
   log(`  关键词：${config.behavior.keywords.join('、') || '无'}；随机接话：${Math.round(config.behavior.replyRate * 100)}%`);
   log(`  冷却：${config.behavior.cooldownSeconds} 秒；群聊 ${config.behavior.maxRepliesPerMinute} 条/分、${config.behavior.maxRepliesPerHour} 条/时；私聊 ${config.behavior.maxPrivateRepliesPerMinute} 条/分`);
+  log(`  响应加速：微延迟 ${config.behavior.typingDelayMs}ms，气泡间隔 ${config.behavior.bubbleDelayMs}ms，流式传输：${config.behavior.stream ? '开启' : '关闭'}`);
   if (config.bot.allowedGroups.length > 0) {
     log(`  只在指定群工作：${config.bot.allowedGroups.join('、')}`);
   } else {
@@ -219,7 +229,13 @@ async function handleIncomingMessage(event) {
   const userId = String(event.user_id ?? '');
   const sender = event.sender ?? {};
   const name = String(sender.card || sender.nickname || (isPrivate ? `QQ${userId}` : `群友${userId}`));
-  const text = toText(event.message, event.raw_message, config.behavior.maxInputChars);
+
+  // 多模态解析：提取文本、图片列表与表情
+  const { text: parsedText, images } = extractMessageParts(event.message, event.raw_message, config.behavior.maxInputChars);
+  let text = parsedText;
+  if (!text && images.length > 0) {
+    text = '[发送了一张图片]';
+  }
 
   let chatKey;
   let autoReply = false;
@@ -244,14 +260,18 @@ async function handleIncomingMessage(event) {
 
   if (config.bot.ignoreQqs.includes(userId)) return;
 
-  // 图片、表情包、语音、@ 等非文字内容：不读、不记、不回（省 token）
-  if (!text) return;
+  // 既无文字又无图片的内容不处理
+  if (!text && images.length === 0) return;
 
-  // 统计：这条会话收到一条文字消息
+  // 好感度被动评估（投喂白饭/赞美加分，恶意辱骂减分）
+  memoryRetriever.evaluatePassiveAffinity(userId, text);
+
+  // 统计：这条会话收到一条消息
   recordChatStat('inbound', chatKey);
 
   // 1) 消息进记忆（哪怕这次不接话），这样大肥鱼才有上下文
-  memory.add(chatKey, { name, text, bot: false });
+  const storedText = images.length > 0 && !text.includes('[图片]') ? `${text} [图片]` : text;
+  memory.add(chatKey, { name, text: storedText, bot: false });
 
   // 2) 决策（autoReply：这个群在控制台设成了「直接回复」；memeReply：命中固定接梗白名单）
   const limits = isPrivate ? chatSettings.privateLimits(userId) : chatSettings.groupLimits(chatKey);
@@ -263,15 +283,15 @@ async function handleIncomingMessage(event) {
   if (!decision.reply) return;
 
   // 3) 同一会话串行；@ 或私聊消息撞上正在生成时，排队补答
-  await scheduleReply({ chatKey, isPrivate, userId, name, decision, lastText: text, limits, strangerSession });
+  await scheduleReply({ chatKey, isPrivate, userId, name, decision, lastText: text, images, limits, strangerSession });
 }
 
-async function scheduleReply({ chatKey, isPrivate, userId, name, decision, lastText, limits, strangerSession }) {
+async function scheduleReply({ chatKey, isPrivate, userId, name, decision, lastText, images = [], limits, strangerSession }) {
   const label = isPrivate ? `[私聊 ${userId}]` : `[群 ${chatKey}]`;
 
   if (replyingChats.has(chatKey)) {
     if (decision.mode === 'at' || decision.mode === 'private' || decision.mode === 'auto' || decision.mode === 'meme') {
-      pendingReplies.set(chatKey, { chatKey, isPrivate, userId, name, decision, lastText, limits, strangerSession });
+      pendingReplies.set(chatKey, { chatKey, isPrivate, userId, name, decision, lastText, images, limits, strangerSession });
       log(`${label} 上一条还在生成，这条先记下，稍后补答`);
     } else {
       log(`${label} 上一条还在生成，这条先放记忆里，不插队`);
@@ -292,7 +312,7 @@ async function scheduleReply({ chatKey, isPrivate, userId, name, decision, lastT
       log(`${label} 达到每分钟/每小时上限，这条不再补答`);
       return;
     }
-    await replyToChat({ chatKey, isPrivate, userId, name, decision, lastText, strangerSession });
+    await replyToChat({ chatKey, isPrivate, userId, name, decision, lastText, images, strangerSession });
   } catch (err) {
     warn(`${label} 回复失败：${err.message}`);
   } finally {
@@ -310,7 +330,7 @@ async function scheduleReply({ chatKey, isPrivate, userId, name, decision, lastT
   }
 }
 
-async function replyToChat({ chatKey, isPrivate, userId, name, decision, lastText, strangerSession = false }) {
+async function replyToChat({ chatKey, isPrivate, userId, name, decision, lastText, images = [], strangerSession = false }) {
   const label = isPrivate ? `[私聊 ${userId}]` : `[群 ${chatKey}]`;
 
   // 梗：token来→token回、白饭来→白饭回、寿来→寿回（固定接话，不调用大模型）
@@ -327,14 +347,38 @@ async function replyToChat({ chatKey, isPrivate, userId, name, decision, lastTex
     return;
   }
 
-  // 像真人在打字：先停顿一下
-  await sleep(rand(700, 1800));
+  // 轻量模拟打字前置微延迟（可配置 TYPING_DELAY_MS 控制，默认 75~150ms，彻底消除原 700~1800ms 死等待）
+  const typingDelay = Math.max(0, config.behavior.typingDelayMs ?? 150);
+  if (typingDelay > 0) {
+    await sleep(rand(Math.floor(typingDelay / 2), typingDelay));
+  }
+
+  // 多模态：解析图片为 Base64 Data URL
+  const resolvedImages = [];
+  if (images && images.length > 0) {
+    for (const img of images) {
+      const b64 = await resolveImageToBase64(img);
+      if (b64) resolvedImages.push(b64);
+    }
+  }
+
+  // RAG 检索长期记忆与群友画像
+  const ragContext = memoryRetriever.formatContextForPrompt({
+    chatKey,
+    userId,
+    userName: name,
+    currentText: lastText,
+  });
 
   const history = [...memory.history(chatKey)];
   // 装不认识的会话：丢掉历史里以前承认过关系的消息（最后一条当前消息必须保留）
   const promptHistory = strangerSession
     ? history.filter((item, index) => index >= history.length - 1 || !RELATION_HIDE_PATTERN.test(item.text))
     : history;
+
+  // 动态意图路由：纯闲聊/接梗走 Fast Path，仅在需要时携带 Tools，大幅缩减 TTFT 首包耗时
+  const toolsToPass = shouldEnableTools(lastText) ? TOOL_DEFINITIONS : [];
+
   const startedAt = Date.now();
   const rawReply = await generateReply({
     config,
@@ -346,6 +390,10 @@ async function replyToChat({ chatKey, isPrivate, userId, name, decision, lastTex
     peerUserId: userId,
     glossaryText: glossary.formatForPrompt(),
     strangerGroup: strangerSession,
+    ragContext,
+    currentImages: resolvedImages,
+    tools: toolsToPass,
+    toolExecutor,
   });
   const costMs = Date.now() - startedAt;
 
@@ -385,21 +433,24 @@ async function replyToChat({ chatKey, isPrivate, userId, name, decision, lastTex
 
   try {
     for (let index = 0; index < bubbles.length; index += 1) {
-      if (index > 0) await sleep(rand(400, 900));
-
-      const segments = [];
-      // 群聊被 @ 时，回复里先带上 @；私聊不需要
-      if (index === 0 && withAt) {
-        segments.push({ type: 'at', data: { qq: userId } });
+      const bubbleDelay = Math.max(0, config.behavior.bubbleDelayMs ?? 200);
+      if (index > 0 && bubbleDelay > 0) {
+        await sleep(rand(Math.floor(bubbleDelay / 2), bubbleDelay));
       }
-      segments.push({
-        type: 'text',
-        data: { text: `${index === 0 && withAt ? ' ' : ''}${bubbles[index]}` },
-      });
+
+      const rawBubble = bubbles[index];
+      // 解析表情包标签 [表情: xxx] / [CQ:face,id=...]
+      const segments = memeManager.parseMessageToSegments(rawBubble);
+
+      // 群聊被 @ 时，回复的第一条气泡先带上 @；私聊不需要
+      if (index === 0 && withAt) {
+        segments.unshift({ type: 'text', data: { text: ' ' } });
+        segments.unshift({ type: 'at', data: { qq: userId } });
+      }
 
       if (isPrivate) await client.sendPrivateMsg(userId, segments);
       else await client.sendGroupMsg(chatKey, segments);
-      sentBubbles.push(bubbles[index]);
+      sentBubbles.push(rawBubble);
     }
   } catch (err) {
     // 多气泡发到一半失败：已经发出去的部分也要记账，避免下一轮重复接话
@@ -434,6 +485,7 @@ function shutdown(signal) {
   shuttingDown = true;
   log(`收到 ${signal}，保存记忆并退出…`);
   memory.stop();
+  memoryRetriever.store.close();
   flushChatStats();
   client.stop();
   removePidFile();

@@ -23,7 +23,7 @@ if (-not $node) {
   }
 }
 if (-not $node -or -not (Test-Path $node)) {
-  throw '找不到 node.exe，请先安装 Node.js 20+，然后重新运行本脚本。'
+  throw '找不到 node.exe，请先安装 Node.js 24+，然后重新运行本脚本。'
 }
 $node = (Resolve-Path $node).Path
 

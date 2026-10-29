@@ -120,11 +120,16 @@ export const config = {
     maxContextChars: readInt('MAX_CONTEXT_CHARS', 2000),
     maxReplyChars: readInt('MAX_REPLY_CHARS', 160),
     multiBubble: readBool('MULTI_BUBBLE', true),
+    typingDelayMs: readInt('TYPING_DELAY_MS', 150),
+    bubbleDelayMs: readInt('BUBBLE_DELAY_MS', 200),
+    stream: readBool('LLM_STREAM', true),
     quietHours: readHourRange('QUIET_HOURS'),
     persistMemory: readBool('PERSIST_MEMORY', true),
   },
   personaFile: path.join(ROOT_DIR, 'prompts', 'persona.md'),
   dataDir: readDataDir(),
+  dbFile: path.join(readDataDir(), 'memory.db'),
+  memesDir: path.join(readDataDir(), 'memes'),
 };
 
 // 启动前检查关键配置，缺东西就直接把话说清楚，别让它带病跑
@@ -132,8 +137,8 @@ export function validateConfig() {
   const problems = [];
 
   const nodeMajor = Number(process.versions.node.split('.')[0]);
-  if (!Number.isFinite(nodeMajor) || nodeMajor < 20) {
-    problems.push(`Node.js 版本太低（当前 v${process.versions.node}），需要 20 或更高；去 https://nodejs.org/zh-cn 装 LTS 版本`);
+  if (!Number.isFinite(nodeMajor) || nodeMajor < 24) {
+    problems.push(`Node.js 版本太低（当前 v${process.versions.node}），需要 24 或更高（内置 node:sqlite 的要求）；去 https://nodejs.org/zh-cn 装 LTS 版本`);
   }
 
   if (!config.llm.apiKey) {

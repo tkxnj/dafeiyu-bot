@@ -25,8 +25,8 @@ function skip(title, detail = '') {
 async function checkNode() {
   const version = process.versions.node;
   const major = Number(version.split('.')[0]);
-  if (major >= 20) ok('Node.js 版本', `v${version}`);
-  else bad('Node.js 版本太低', `v${version}，需要 20 或更高；去 https://nodejs.org/zh-cn 装 LTS`);
+  if (major >= 24) ok('Node.js 版本', `v${version}`);
+  else bad('Node.js 版本太低', `v${version}，需要 24 或更高（内置 node:sqlite）；去 https://nodejs.org/zh-cn 装 LTS`);
 }
 
 function checkFiles() {

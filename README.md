@@ -12,12 +12,16 @@
 - **私聊按人开关**：每个人单独决定回不回复
 - **人设**：DeepSeek 鲸鱼娘，贱萌、傲娇、爱摸鱼偷吃；可自己改 `prompts/persona.md`
 - **长期记忆**：记住主人/男朋友、讨厌的人；私聊主人更黏更甜
+- **SQLite 长期记忆与群友画像**：内置 `node:sqlite` 保存用户画像/好感度/长期事实，BM25 RAG 按相关度注入 prompt
+- **Tool Calling**：按需调用工具（当前时间、天气、百科搜索、随机决定/骰子、安全计算器、主动记录群友档案）
+- **多模态图片**：支持读取图片消息（需要视觉模型/接口；纯文本模型请勿发图或切换模型）
+- **表情包**：模型可以在回复里带 `[表情: 傲娇]` 一类标签，自动转成 QQ 原生表情或本地表情包
 - **会话独立设置**：每个群/私聊单独设置回复模式、每分钟/每小时限额、是否承认主人关系
 - **梗词典**：遇到看不懂的梗自动记到控制台，你写一句解释，AI 下次就懂
 - **固定接梗**：`token来→token回`、`白饭来→白饭回`、`寿来→寿回`
-- **省 token**：图片/表情包/语音不读取，长消息截断，上下文有字数上限
+- **省 token / 提速**：长消息截断、上下文有字数上限；支持流式输出与可配置的打字/气泡延迟
 - **桌面控制台**：启动/停止/重启、看日志、改会话设置、扫码登录 NapCat
-- **本地全链路自测**：`npm run selftest` 用模拟 QQ/模拟大模型跑通，不花钱不连 QQ
+- **本地自测**：`npm run selftest` + `npm run test-ai` 用模拟 QQ/模拟大模型跑通，不花钱不连 QQ
 
 ## 两种获取方式
 
@@ -47,7 +51,7 @@ npm ci
 
 - Windows 10/11
 - **QQ 桌面版**（官方客户端；NapCat 需要调用已安装的 QQ）
-- **Node.js 20+**（<https://nodejs.org/zh-cn>，安装 LTS 即可）
+- **Node.js 24+**（<https://nodejs.org/zh-cn>；因为使用了内置 `node:sqlite`，Node 20/22 会启动失败）
 - **一个 QQ 小号**（不要用大号；有封号风险）
 - **DeepSeek API Key**：<https://platform.deepseek.com/api_keys>
 
@@ -98,6 +102,7 @@ npm start
 
 ```bash
 npm run selftest     # 本地全链路自测：模拟 QQ + 模拟大模型，不花钱
+npm run test-ai      # 多模态 / SQLite RAG / 工具调用 三块新能力测试
 npm run check        # 检查 NapCat/OneBot 连接和登录账号
 npm run doctor       # 环境体检
 ```
@@ -138,6 +143,8 @@ powershell -ExecutionPolicy Bypass -File control\安装控制台.ps1
 | `MAX_REPLIES_PER_HOUR` / `MAX_REPLIES_PER_MINUTE` / `MAX_PRIVATE_REPLIES_PER_MINUTE` | 全局限额默认值 |
 | `QUIET_HOURS` | 安静时段，如 `1-8` |
 | `MAX_INPUT_CHARS` / `MAX_CONTEXT_CHARS` | 单条输入/上下文总字数上限，省 token |
+| `TYPING_DELAY_MS` / `BUBBLE_DELAY_MS` | 模拟打字前置延迟 / 多气泡之间间隔（毫秒） |
+| `LLM_STREAM` | 是否使用流式输出（`true` 首字更快） |
 | `STRANGER_GROUPS` | 可选：默认要装不认识主人的群号（控制台也能单独切换） |
 
 ## 项目结构
@@ -145,20 +152,25 @@ powershell -ExecutionPolicy Bypass -File control\安装控制台.ps1
 ```
 blue-fatfish-bot/
 ├─ src/            # bot 源码（入口、OneBot、记忆、触发、LLM、会话设置、梗词典）
+│  ├─ db.js        # SQLite 用户画像 / 长期记忆存储（node:sqlite）
+│  ├─ rag.js       # BM25 长期记忆检索 + 群友画像注入
+│  ├─ meme.js      # [表情: xxx] / CQ face 转消息段，支持本地表情包
+│  └─ tools/       # Function Calling 工具定义与执行器
 ├─ prompts/        # 人设 prompt
 ├─ control/        # 桌面控制台（本地网页后端 + 前端 + 隐藏启动脚本）
-├─ scripts/        # 自测、体检、演示、停止脚本
+├─ scripts/        # 自测、体检、演示、停止脚本（含 test-ai-upgrades.mjs）
 ├─ docs/           # 常见问题、调教指南、原理、形象设定
-├─ data/           # 运行期数据（日志、记忆、会话设置）——不提交、不外传
+├─ data/           # 运行期数据（日志、memory.db、会话设置）——不提交、不外传
 ├─ napcat/         # NapCat 运行时（全量包包含；源码仓库不含）
 ├─ .env.example    # 配置模板
-├─ 启动.bat / 停止.bat
+├─ 启动.bat / 停止.bat / 首次配置.bat
 └─ package.json
 ```
 
 ## 自测与排错
 
 - `npm run selftest`：不需要 `.env` 里的真 Key，也不需要 QQ
+- `npm run test-ai`：测试多模态解析、SQLite RAG、工具调用（同样不需要真 Key）
 - `npm run doctor`：检查 Node、NapCat 端口、模型配置
 - `npm run check`：检查 OneBot 连接与登录账号
 - 日志：`data\bot.log`（bot）、`data\napcat.log`（NapCat）、`data\control.log`（控制台）
@@ -177,6 +189,7 @@ blue-fatfish-bot/
 - 本项目**不是**腾讯或 DeepSeek 官方项目，与它们没有关系。
 - NapCat 是第三方 QQ 协议方案，**违反 QQ 用户协议，存在临时冻结/长期封号风险**；请只用小号、低频使用、不要用于违法用途。
 - 不要把自己的 `.env`、`data/`、NapCat 登录缓存发给别人；本仓库的 `.gitignore` 已默认排除这些文件。
+- 多模态与工具会访问外部网络（QQ 图片 URL、`wttr.in` 天气、维基百科）；发图/用工具前请注意隐私与网络环境。
 - AI 生成内容可能出错；涉及事实、代码、法律/医疗等内容请自行核实。
 - 禁止用本项目生成违法、色情、暴力、骚扰或侵犯他人隐私的内容。
 - 公开仓库不包含任何真实账号登录数据、API Key 或聊天记录。

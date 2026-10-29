@@ -7,7 +7,7 @@ title Blue Fatfish Bot
 rem ---------- 1) Node.js ----------
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] Node.js not found. Install Node.js 20+ from https://nodejs.org
+  echo [ERROR] Node.js not found. Install Node.js 24+ from https://nodejs.org
   pause
   exit /b 1
 )

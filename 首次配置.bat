@@ -7,7 +7,7 @@ title Blue Fatfish - First Setup
 where node >nul 2>nul
 if errorlevel 1 (
   echo.
-  echo [ERROR] Node.js not found. Install Node.js 20+ from https://nodejs.org
+  echo [ERROR] Node.js not found. Install Node.js 24+ from https://nodejs.org
   pause
   exit /b 1
 )
